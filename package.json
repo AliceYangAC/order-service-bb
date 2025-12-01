@@ -16,6 +16,7 @@
     "@azure/service-bus": "^7.9.4",
     "@fastify/autoload": "^5.0.0",
     "@fastify/cors": "^8.3.0",
+    "@fastify/mongodb": "^8.0.0",
     "@fastify/sensible": "^4.1.0",
     "fastify": "^4.0.0",
     "fastify-cli": "^4.4.0",
