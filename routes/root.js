@@ -16,34 +16,33 @@ module.exports = async function (fastify, opts) {
     return { hugs: fastify.someSupport() }
   })
 
-  // GET /orders/recommendations/:productId
-  fastify.get('/recommendations/:id', async (request, reply) => {
-    const targetId = parseInt(request.params.id);
-    const collection = fastify.mongo.db.collection('orders');
+// GET /orders/recommendations/:productId
+fastify.get('/recommendations/:id', async (request, reply) => {
+  const targetId = parseInt(request.params.id);
+  const collection = fastify.mongo.db.collection('orders');
 
-    const pipeline = [
-      // Find only orders that contain the target product
-      { $match: { "items.productId": targetId } },
-      
-      // Break the items array into individual documents
-      { $unwind: "$items" },
-      
-      // Filter OUT the target product itself (we don't recommend what they are already looking at)
-      { $match: { "items.productId": { $ne: targetId } } },
-      
-      // Group by Product ID and count occurrences
-      { $group: { _id: "$items.productId", count: { $sum: 1 } } },
-      
-      // Sort by most frequent
-      { $sort: { count: -1 } },
-      
-      // Take top 3
-      { $limit: 3 }
-    ];
-
-    const results = await collection.aggregate(pipeline).toArray();
+  const pipeline = [
+    // 1. Match orders containing the target product
+    { $match: { "items.product": targetId } },
     
-    // Return simple array of IDs: [1, 5, 8]
-    return results.map(item => item._id);
-  });
-}
+    // 2. Flatten the items array
+    { $unwind: "$items" },
+    
+    // 3. Filter OUT the target product itself
+    { $match: { "items.product": { $ne: targetId } } },
+    
+    // 4. Group by Product ID and count them
+    { $group: { _id: "$items.product", count: { $sum: 1 } } },
+    
+    // 5. Sort by popularity (highest count first)
+    { $sort: { count: -1 } },
+    
+    // 6. Limit to top 3 recommendations
+    { $limit: 3 }
+  ];
+
+  const results = await collection.aggregate(pipeline).toArray();
+  
+  // Return array of IDs (e.g., [3, 4, 5])
+  return results.map(item => item._id);
+});
