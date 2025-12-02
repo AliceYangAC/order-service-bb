@@ -21,6 +21,7 @@
     "fastify": "^4.0.0",
     "fastify-cli": "^4.4.0",
     "fastify-plugin": "^3.0.0",
+    "node-geocoder": "^4.3.0",
     "rhea": "^3.0.2"
   },
   "devDependencies": {
