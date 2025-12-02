@@ -30,19 +30,6 @@ module.exports = async function (fastify, opts) {
       return;
     }
 
-    // validate Canadian postal code
-    if (!postalCodeRegex.test(shipping.postalCode)) {
-      reply.code(400).send({ error: "Invalid Canadian Postal Code" });
-      return;
-    }
-
-    // validate payment info
-    const payment = order.payment;
-    if (!payment || !validPaymentTypes.includes(payment.paymentType)) {
-      reply.code(400).send({ error: "Invalid Payment Type" });
-      return;
-    }
-
     // verify Address if not confirmed
     if (order.addressConfirmed !== true) {
       const fullAddressQuery = `${shipping.address1}, ${shipping.city}, ${shipping.province}, ${shipping.postalCode}, Canada`;
@@ -52,7 +39,10 @@ module.exports = async function (fastify, opts) {
         const results = await geocoder.geocode(fullAddressQuery);
 
         if (!results || results.length === 0) {
-          reply.code(400).send({ error: "Address not found. Please check details." });
+          reply.code(409).send({ 
+              error: "Address not found. Use anyway?", 
+              suggestion: shipping 
+          });
           return;
         }
 
@@ -80,6 +70,24 @@ module.exports = async function (fastify, opts) {
         reply.code(500).send({ error: "Address verification unavailable." });
         return;
       }
+    }
+
+    // Normalize to UpperCase
+    let cleanCode = shipping.postalCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    
+    // Force standard format "K1A 0B1" (3 chars, space, 3 chars)
+    if (cleanCode.length === 6) {
+        cleanCode = cleanCode.slice(0, 3) + " " + cleanCode.slice(3);
+    }
+    
+    // Update the object so the Geocoder AND Database use the clean version
+    shipping.postalCode = cleanCode;
+
+    // validate payment info
+    const payment = order.payment;
+    if (!payment || !validPaymentTypes.includes(payment.paymentType)) {
+      reply.code(400).send({ error: "Invalid Payment Type" });
+      return;
     }
 
     // mocked payment gateway processing
