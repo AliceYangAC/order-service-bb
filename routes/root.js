@@ -1,16 +1,14 @@
 'use strict'
 
 const NodeGeocoder = require('node-geocoder');
-const crypto = require('crypto'); // Used to generate fake transaction IDs if missing
+const crypto = require('crypto');
 
-// configure to use OpenStreetMap
 const geocoder = NodeGeocoder({
   provider: 'openstreetmap',
   httpAdapter: 'https',
   headers: { 'User-Agent': 'BestBuyClone/1.0' }
 });
 
-const postalCodeRegex = /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/;
 const validPaymentTypes = ['VISA', 'MASTERCARD', 'AMEX'];
 
 module.exports = async function (fastify, opts) {
@@ -74,13 +72,9 @@ module.exports = async function (fastify, opts) {
 
     // Normalize to UpperCase
     let cleanCode = shipping.postalCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    
-    // Force standard format "K1A 0B1" (3 chars, space, 3 chars)
     if (cleanCode.length === 6) {
         cleanCode = cleanCode.slice(0, 3) + " " + cleanCode.slice(3);
     }
-    
-    // Update the object so the Geocoder AND Database use the clean version
     shipping.postalCode = cleanCode;
 
     // validate payment info
@@ -92,24 +86,34 @@ module.exports = async function (fastify, opts) {
 
     // mocked payment gateway processing
     order.payment = {
-      provider: "Spot", // Mocked payment gateway; like Stripe :)
-      paymentType: payment.paymentType, // VISA/MC/AMEX
-      transactionId: crypto.randomUUID(), // Unique charge ID from the "Gateway"
-      last4: Math.floor(1000 + Math.random() * 9000).toString(), // The safe "4242" display data
+      provider: "Spot",
+      paymentType: payment.paymentType,
+      transactionId: crypto.randomUUID(),
+      last4: Math.floor(1000 + Math.random() * 9000).toString(),
       status: "Paid"
     };
 
     // send to Azure Service Bus
     const msgBody = JSON.stringify(order);
-    fastify.sendMessage(Buffer.from(msgBody));
+    if (fastify.sendMessage) {
+        fastify.sendMessage(Buffer.from(msgBody));
+    }
+
+    // --- OPTIONAL: SAVE TO DB HERE ---
+    // (If you want to save orders to Cosmos/Mongo as well as Service Bus)
+    // if (fastify.mongo && fastify.mongo.db) {
+    //    const collection = fastify.mongo.db.collection('orders');
+    //    // Adapt insertion logic if using Cosmos wrapper vs Mongo driver
+    // }
 
     reply.code(201).send({ status: "Order Created", transactionId: order.payment.transactionId });
   });
   
-  // ... (Keep health/hugs/recommendations routes unchanged) ...
   fastify.get('/health', async function (request, reply) {
+    // Return DB Type for debugging
+    const dbType = process.env.USE_WORKLOAD_IDENTITY_AUTH === 'true' ? 'CosmosSQL' : 'Mongo';
     const appVersion = process.env.APP_VERSION || '0.1.0'
-    return { status: 'ok', version: appVersion }
+    return { status: 'ok', version: appVersion, db: dbType }
   })
 
   fastify.get('/hugs', async function (request, reply) {
@@ -117,10 +121,16 @@ module.exports = async function (fastify, opts) {
   })
 
   fastify.get('/recommendations/:id', async (request, reply) => {
+    // Safety check in case DB init failed
+    if (!fastify.mongo || !fastify.mongo.db) {
+        reply.code(503).send({ error: "Database not available" });
+        return;
+    }
+
     const targetId = parseInt(request.params.id);
-    // Need to ensure mongo plugin is loaded
     const collection = fastify.mongo.db.collection('orders');
 
+    // This pipeline object is passed to our Adapter
     const pipeline = [
       { $match: { "items.product": targetId } },
       { $unwind: "$items" },
@@ -130,7 +140,10 @@ module.exports = async function (fastify, opts) {
       { $limit: 3 }
     ];
 
+    // The Adapter's .aggregate() handles the translation to SQL if using Cosmos
     const results = await collection.aggregate(pipeline).toArray();
+    
+    // Ensure results match expected format [{_id: 123}, {_id: 456}]
     return results.map(item => item._id);
   });
 }
