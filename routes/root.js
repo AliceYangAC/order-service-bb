@@ -106,19 +106,20 @@ module.exports = async function (fastify, opts) {
     reply.code(201).send({ status: "Order Created", transactionId: order.payment.transactionId });
   });
   
-  // ... (Keep health/hugs/recommendations routes unchanged) ...
+  // Health check endpoint
   fastify.get('/health', async function (request, reply) {
     const appVersion = process.env.APP_VERSION || '0.1.0'
     return { status: 'ok', version: appVersion }
   })
 
+  // Support endpoint
   fastify.get('/hugs', async function (request, reply) {
     return { hugs: fastify.someSupport() }
   })
 
+  // Recommendations endpoint: returns top 3 products frequently bought with the given product ID
   fastify.get('/recommendations/:id', async (request, reply) => {
     const targetId = parseInt(request.params.id);
-    // Need to ensure mongo plugin is loaded
     const collection = fastify.mongo.db.collection('orders');
 
     const pipeline = [
